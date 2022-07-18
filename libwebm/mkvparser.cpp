@@ -10,7 +10,29 @@
 #include <cassert>
 #include <cstring>
 #include <new>
+#ifdef MTK_AOSP_ENHANCEMENT 
+#undef LOG_TAG
+#define LOG_TAG "MatroskaExtractor"
+#endif  //#ifdef MTK_AOSP_ENHANCEMENT
 #include <climits>
+
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <utils/Log.h>
+#define MKVPARSER_USE_XLOG
+#ifdef MKVPARSER_USE_XLOG
+#include <cutils/xlog.h>
+#undef ALOGE
+#undef ALOGW
+#undef ALOGI
+#undef ALOGD
+#undef ALOGV
+#define ALOGE XLOGE
+#define ALOGW XLOGW
+#define ALOGI XLOGI
+#define ALOGD XLOGD
+#define ALOGV XLOGV
+#endif
+#endif
 
 #ifdef _MSC_VER
 // Disable MSVC warnings that suggest making code non-portable.
@@ -24,6 +46,9 @@ void mkvparser::GetVersion(int& major, int& minor, int& build, int& revision) {
   minor = 0;
   build = 0;
   revision = 28;
+#ifdef MTK_AOSP_ENHANCEMENT
+	ALOGD("mkvparser: revision 28!");
+#endif
 }
 
 long long mkvparser::ReadUInt(IMkvReader* pReader, long long pos, long& len) {
@@ -601,6 +626,9 @@ Segment::Segment(IMkvReader* pReader, long long elem_start,
       m_start(start),
       m_size(size),
       m_pos(start),
+#ifdef MTK_AOSP_ENHANCEMENT
+m_videotracknumber(0),
+#endif
       m_pUnknownSize(0),
       m_pSeekHead(NULL),
       m_pInfo(NULL),
@@ -729,7 +757,12 @@ long long Segment::CreateInstance(IMkvReader* pReader, long long pos,
         size = -1;
 
       else if ((pos + size) > total)
-        size = -1;
+#ifdef MTK_AOSP_ENHANCEMENT
+				ALOGE("CreateInstance: pos=%lld, size=%lld, total=%lld",pos, size,total);
+				size = total-pos;
+#else
+                size = -1;
+#endif
 
       pSegment = new (std::nothrow) Segment(pReader, idpos,
                                             // elem_size
@@ -763,7 +796,14 @@ long long Segment::ParseHeaders() {
   const int status = m_pReader->Length(&total, &available);
 
   if (status < 0)  // error
-    return status;
+ #ifdef MTK_AOSP_ENHANCEMENT
+	{
+    	ALOGE("ParseHeaders, status = %d < 0, return error!",status);
+        return status;
+	}
+#else
+        return status;
+#endif
 
   assert((total < 0) || (available <= total));
 
@@ -794,7 +834,14 @@ long long Segment::ParseHeaders() {
       return (pos + 1);
 
     if ((segment_stop >= 0) && ((pos + len) > segment_stop))
+#ifdef MTK_AOSP_ENHANCEMENT
+		{
+			ALOGE("ParseHeaders, return E_FILE_FORMAT_INVALID1!");
+			return E_FILE_FORMAT_INVALID;
+		}
+#else
       return E_FILE_FORMAT_INVALID;
+#endif
 
     if ((pos + len) > available)
       return pos + len;
@@ -823,7 +870,14 @@ long long Segment::ParseHeaders() {
       return (pos + 1);
 
     if ((segment_stop >= 0) && ((pos + len) > segment_stop))
+#ifdef MTK_AOSP_ENHANCEMENT
+		{
+			ALOGE("ParseHeaders, return E_FILE_FORMAT_INVALID2!");
       return E_FILE_FORMAT_INVALID;
+		}
+#else
+        return E_FILE_FORMAT_INVALID;
+#endif
 
     if ((pos + len) > available)
       return pos + len;
@@ -840,7 +894,14 @@ long long Segment::ParseHeaders() {
     // Pos now points to start of payload
 
     if ((segment_stop >= 0) && ((pos + size) > segment_stop))
+#ifdef MTK_AOSP_ENHANCEMENT
+		{
+			ALOGE("ParseHeaders, return E_FILE_FORMAT_INVALID3!");
       return E_FILE_FORMAT_INVALID;
+		}
+#else
+        return E_FILE_FORMAT_INVALID;
+#endif
 
     // We read EBML elements either in total or nothing at all.
 
@@ -849,7 +910,14 @@ long long Segment::ParseHeaders() {
 
     if (id == 0x0549A966) {  // Segment Info ID
       if (m_pInfo)
+#ifdef MTK_AOSP_ENHANCEMENT
+			{
+				ALOGE("ParseHeaders, return E_FILE_FORMAT_INVALID4!");
         return E_FILE_FORMAT_INVALID;
+			}
+#else
+            return E_FILE_FORMAT_INVALID;
+#endif
 
       m_pInfo = new (std::nothrow)
           SegmentInfo(this, pos, size, element_start, element_size);
@@ -859,11 +927,26 @@ long long Segment::ParseHeaders() {
 
       const long status = m_pInfo->Parse();
 
-      if (status)
-        return status;
-    } else if (id == 0x0654AE6B) {  // Tracks ID
+if (status)
+#ifdef MTK_AOSP_ENHANCEMENT
+			{
+				ALOGE("ParseHeaders, m_pInfo->Parse, return error!");
+				return status;
+			}
+#else
+                return status;
+#endif
+        }
+else if (id == 0x0654AE6B) {  // Tracks ID
       if (m_pTracks)
-        return E_FILE_FORMAT_INVALID;
+#ifdef MTK_AOSP_ENHANCEMENT
+			{
+				ALOGE("ParseHeaders, return E_FILE_FORMAT_INVALID5!");
+				return E_FILE_FORMAT_INVALID;
+			}
+#else
+            return E_FILE_FORMAT_INVALID;
+#endif
 
       m_pTracks = new (std::nothrow)
           Tracks(this, pos, size, element_start, element_size);
@@ -874,12 +957,23 @@ long long Segment::ParseHeaders() {
       const long status = m_pTracks->Parse();
 
       if (status)
-        return status;
+#ifdef MTK_AOSP_ENHANCEMENT
+			{
+				ALOGE("ParseHeaders, m_pTracks->Parse, return error!");
+				return status;
+			}
+#else
+            return status;
+#endif
+
     } else if (id == 0x0C53BB6B) {  // Cues ID
       if (m_pCues == NULL) {
         m_pCues = new (std::nothrow)
             Cues(this, pos, size, element_start, element_size);
 
+#ifdef MTK_AOSP_ENHANCEMENT
+				ALOGD("seekheader: m_pCues=%d",m_pCues);
+#endif
         if (m_pCues == NULL)
           return -1;
       }
@@ -894,7 +988,14 @@ long long Segment::ParseHeaders() {
         const long status = m_pSeekHead->Parse();
 
         if (status)
-          return status;
+#ifdef MTK_AOSP_ENHANCEMENT
+				{
+					ALOGE("ParseHeaders, m_pSeekHead->Parse, return error!");
+					return status;
+				}
+#else
+                    return status;
+#endif
       }
     } else if (id == 0x0043A770) {  // Chapters ID
       if (m_pChapters == NULL) {
@@ -917,10 +1018,24 @@ long long Segment::ParseHeaders() {
   assert((segment_stop < 0) || (m_pos <= segment_stop));
 
   if (m_pInfo == NULL)  // TODO: liberalize this behavior
-    return E_FILE_FORMAT_INVALID;
+#ifdef MTK_AOSP_ENHANCEMENT
+		{
+			ALOGE("ParseHeaders, return E_FILE_FORMAT_INVALID6!");
+			return E_FILE_FORMAT_INVALID;
+		}
+#else
+        return E_FILE_FORMAT_INVALID;
+#endif
 
   if (m_pTracks == NULL)
+#ifdef MTK_AOSP_ENHANCEMENT
+	{
+		ALOGE("ParseHeaders, return E_FILE_FORMAT_INVALID7!");
+		return E_FILE_FORMAT_INVALID;
+	}
+#else
     return E_FILE_FORMAT_INVALID;
+#endif
 
   return 0;  // success
 }
@@ -1656,10 +1771,24 @@ long Segment::Load() {
     const int status = LoadCluster();
 
     if (status < 0)  // error
-      return status;
+ #ifdef MTK_AOSP_ENHANCEMENT
+		{
+			ALOGD("cluster load failed! file  can't display completely");			
+			return 0;
+		}
+#else
+            return status;
+#endif
 
     if (status >= 1)  // no more clusters
-      return 0;
+#ifdef MTK_AOSP_ENHANCEMENT
+		{
+			ALOGD("no more clusters");
+			return 0;
+		}
+#else
+            return 0;
+#endif
   }
 }
 
@@ -2121,6 +2250,11 @@ Cues::Cues(Segment* pSegment, long long start_, long long size_,
       m_size(size_),
       m_element_start(element_start),
       m_element_size(element_size),
+#ifdef MTK_AOSP_ENHANCEMENT
+	m_cue_temp_points(NULL),
+    m_temp_count(0),
+    m_preload_temp_count(0),	
+#endif
       m_cue_points(NULL),
       m_count(0),
       m_preload_count(0),
@@ -2140,6 +2274,23 @@ Cues::~Cues() {
   }
 
   delete[] m_cue_points;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+	const long m = m_temp_count + m_preload_temp_count;
+
+    CuePoint** temp_p = m_cue_temp_points;
+    CuePoint** const temp_q = temp_p + m;
+
+    while (temp_p != temp_q)
+    {
+        CuePoint* const temp_pCP = *temp_p++;
+        assert(temp_pCP);
+
+        delete temp_pCP;
+    }
+    delete[] m_cue_temp_points;
+#endif
+
 }
 
 long Cues::GetCount() const {
@@ -2197,14 +2348,22 @@ void Cues::Init() const {
 void Cues::PreloadCuePoint(long& cue_points_size, long long pos) const {
   assert(m_count == 0);
 
-  if (m_preload_count >= cue_points_size) {
+#ifdef MTK_AOSP_ENHANCEMENT
+if (m_preload_temp_count >= cue_points_size) {
+#else 
+ if (m_preload_count >= cue_points_size) {
+#endif 
     const long n = (cue_points_size <= 0) ? 2048 : 2 * cue_points_size;
 
     CuePoint** const qq = new CuePoint* [n];
     CuePoint** q = qq;  // beginning of target
 
     CuePoint** p = m_cue_points;  // beginning of source
-    CuePoint** const pp = p + m_preload_count;  // end of source
+#ifdef MTK_AOSP_ENHANCEMENT       
+		CuePoint** const pp = p + m_preload_temp_count;
+#else
+        CuePoint** const pp = p + m_preload_count;  //end of source
+#endif
 
     while (p != pp)
       *q++ = *p++;
@@ -2213,10 +2372,33 @@ void Cues::PreloadCuePoint(long& cue_points_size, long long pos) const {
 
     m_cue_points = qq;
     cue_points_size = n;
+#ifdef MTK_AOSP_ENHANCEMENT
+		ALOGV("cue_points_size=%ld",cue_points_size);
+		const long m=n;
+
+        CuePoint** const temp_qq = new CuePoint*[m];
+        CuePoint** temp_q = temp_qq;  //beginning of target
+
+        CuePoint** temp_p = m_cue_temp_points;                //beginning of source
+        CuePoint** const temp_pp = temp_p + m_preload_temp_count;  //end of source
+
+        while (temp_p != temp_pp)
+            *temp_q++ = *temp_p++;
+
+        delete[] m_cue_temp_points;
+
+        m_cue_temp_points = temp_qq;
+
+#endif
   }
 
   CuePoint* const pCP = new CuePoint(m_preload_count, pos);
+#ifdef MTK_AOSP_ENHANCEMENT
+	ALOGV("PreloadCuePoint m_preload_count=%ld,pos=%lld",m_preload_count,pos);
+	m_cue_temp_points[m_preload_temp_count++] = pCP;
+#else
   m_cue_points[m_preload_count++] = pCP;
+#endif	
 }
 
 bool Cues::LoadCuePoint() const {
@@ -2256,19 +2438,38 @@ bool Cues::LoadCuePoint() const {
 
       continue;
     }
+#ifdef MTK_AOSP_ENHANCEMENT
+		assert(m_preload_temp_count > 0);
+		CuePoint* const pCP = m_cue_temp_points[m_temp_count];
 
+#else
     assert(m_preload_count > 0);
 
     CuePoint* const pCP = m_cue_points[m_count];
+#endif		
     assert(pCP);
     assert((pCP->GetTimeCode() >= 0) || (-pCP->GetTimeCode() == idpos));
     if (pCP->GetTimeCode() < 0 && (-pCP->GetTimeCode() != idpos))
       return false;
 
     pCP->Load(pReader);
-    ++m_count;
-    --m_preload_count;
-
+#ifdef MTK_AOSP_ENHANCEMENT
+		
+		if(pCP->IsHasVideoCuePositon(m_pSegment->m_videotracknumber)){
+			m_cue_points[m_count]=m_cue_temp_points[m_temp_count];
+			ALOGV("load a video cue point,m_count=%d",m_count);
+			++m_count;
+			--m_preload_count;
+		}else{
+			ALOGV("pCP->m_timecode=%lld",pCP->m_timecode);
+			ALOGD("cue ponint doesn't have video tarck info,continue");
+		}
+ 		++m_temp_count;
+		--m_preload_temp_count;	
+#else
+        ++m_count;
+        --m_preload_count;
+#endif
     m_pos += size;  // consume payload
     assert(m_pos <= stop);
 
@@ -2719,7 +2920,9 @@ void CuePoint::Load(IMkvReader* pReader) {
 
   long long pos_ = -m_timecode;
   const long long element_start = pos_;
-
+#ifdef MTK_AOSP_ENHANCEMENT
+	ALOGV("element_start=%lld",element_start);
+#endif 
   long long stop;
 
   {
@@ -2861,6 +3064,25 @@ void CuePoint::TrackPosition::Parse(IMkvReader* pReader, long long start_,
   // assert(m_block > 0);
 }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+bool  CuePoint::IsHasVideoCuePositon(long videotracknumber) 
+{
+    
+    const TrackPosition* i = m_track_positions;
+    const TrackPosition* const j = i + m_track_positions_count;
+//	ALOGV("m_track_positions_count=%d",m_track_positions_count);
+    while (i != j)
+    {
+        const TrackPosition& p = *i++;
+//		ALOGD("p.m_track=%lld",p.m_track);
+        if (p.m_track == videotracknumber)
+            return true;
+    }
+	m_timecode=0;
+    return false;  //no matching track number found
+}
+#endif
+
 const CuePoint::TrackPosition* CuePoint::Find(const Track* pTrack) const {
   assert(pTrack);
 
@@ -2954,6 +3176,44 @@ const Cluster* Segment::GetLast() const {
 }
 
 unsigned long Segment::GetCount() const { return m_clusterCount; }
+
+#ifdef MTK_AOSP_ENHANCEMENT
+//added by vend_am00033 start for seeking backward
+Cluster* Segment::GetPrev(const Cluster* pCurr)
+{
+    assert(pCurr);
+    assert(pCurr != &m_eos);
+    assert(m_clusters);
+
+    long idx =  pCurr->m_index;
+
+    if (idx >= 0)
+    {
+        assert(m_clusterCount > 0);
+        assert(idx < m_clusterCount);
+        assert(pCurr == m_clusters[idx]);
+
+		if (idx <= 0)
+		{
+			return &m_eos;
+		}
+
+		//idx >= 1
+        --idx;
+
+        Cluster* const pNext = m_clusters[idx];
+        assert(pNext);
+        assert(pNext->m_index >= 0);
+        assert(pNext->m_index == idx);
+
+        return pNext;
+    }
+
+	ALOGE("cannot reach here...(%s):(%d)", __func__, __LINE__);
+	return &m_eos;
+}
+//added by vend_am00033 end
+#endif
 
 const Cluster* Segment::GetNext(const Cluster* pCurr) {
   assert(pCurr);
@@ -4406,7 +4666,8 @@ const char* SegmentInfo::GetTitleAsUTF8() const { return m_pTitleAsUTF8; }
 ///////////////////////////////////////////////////////////////
 // ContentEncoding element
 ContentEncoding::ContentCompression::ContentCompression()
-    : algo(0), settings(NULL), settings_len(0) {}
+    : algo(0), settings(NULL), settings_len(0) {
+}
 
 ContentEncoding::ContentCompression::~ContentCompression() {
   delete[] settings;
@@ -4683,7 +4944,6 @@ long ContentEncoding::ParseCompressionEntry(long long start, long long size,
 
   return 0;
 }
-
 long ContentEncoding::ParseEncryptionEntry(long long start, long long size,
                                            IMkvReader* pReader,
                                            ContentEncryption* encryption) {
@@ -4852,6 +5112,11 @@ Track::Info::Info()
       codecNameAsUTF8(NULL),
       codecPrivate(NULL),
       codecPrivateSize(0),
+#ifdef MTK_AOSP_ENHANCEMENT   
+#if defined(MTK_AUDIO_CHANGE_SUPPORT) || defined(MTK_SUBTITLE_SUPPORT)
+	languageAsUTF8(NULL), // Need Refine: change to use android lanuage
+#endif
+#endif
       lacing(false) {}
 
 Track::Info::~Info() { Clear(); }
@@ -4872,6 +5137,14 @@ void Track::Info::Clear() {
 
   delete[] codecNameAsUTF8;
   codecNameAsUTF8 = NULL;
+
+//Need Refine: need delete and use android language
+#ifdef MTK_AOSP_ENHANCEMENT   
+#if defined(MTK_AUDIO_CHANGE_SUPPORT) || defined(MTK_SUBTITLE_SUPPORT)
+    delete[] languageAsUTF8;
+    languageAsUTF8 = NULL;
+#endif
+#endif
 }
 
 int Track::Info::CopyStr(char* Info::*str, Info& dst_) const {
@@ -4931,6 +5204,14 @@ int Track::Info::Copy(Info& dst) const {
   if (int status = CopyStr(&Info::codecNameAsUTF8, dst))
     return status;
 
+//Need Refine: need delete to use android language
+#ifdef MTK_AOSP_ENHANCEMENT   
+#if defined(MTK_AUDIO_CHANGE_SUPPORT) || defined(MTK_SUBTITLE_SUPPORT)
+	if (int status = CopyStr(&Info::languageAsUTF8, dst))
+		return status;
+#endif
+#endif
+
   if (codecPrivateSize > 0) {
     if (codecPrivate == NULL)
       return -1;
@@ -4965,6 +5246,16 @@ const char* Track::GetNameAsUTF8() const { return m_info.nameAsUTF8; }
 
 const char* Track::GetLanguage() const { return m_info.language; }
 
+//Need Refine: chanage to use androie getlanguage
+#ifdef MTK_AOSP_ENHANCEMENT   
+#if defined(MTK_AUDIO_CHANGE_SUPPORT) || defined(MTK_SUBTITLE_SUPPORT)
+const char* Track::GetLanguageAsUTF8() const
+{
+    return m_info.languageAsUTF8;
+}
+#endif
+#endif
+
 const char* Track::GetCodecNameAsUTF8() const { return m_info.codecNameAsUTF8; }
 
 const char* Track::GetCodecId() const { return m_info.codecId; }
@@ -4983,6 +5274,36 @@ unsigned long long Track::GetDefaultDuration() const {
 unsigned long long Track::GetCodecDelay() const { return m_info.codecDelay; }
 
 unsigned long long Track::GetSeekPreRoll() const { return m_info.seekPreRoll; }
+
+
+#ifdef MTK_AOSP_ENHANCEMENT
+/*
+The compression algorithm used. Algorithms that have been specified so far are:
+0 - zlib,
+1 - bzlib,
+2 - lzo1x
+3 - Header Stripping
+
+we can only handle "Header Stripping", and get the header stripping info from 
+the first CompressionEntry of the first ContentEncodingEntry
+*/
+void Track::GetContentAddInfo(unsigned char** data, size_t* size) const
+{
+	bool hasCompression = false;
+	if(GetContentEncodingCount()>0){
+		const ContentEncoding*  content= GetContentEncodingByIndex(0);
+		if(content->GetCompressionCount()>0){
+			*size = content->GetCompressionByIndex(0)->settings_len;
+			*data = content->GetCompressionByIndex(0)->settings;		
+			hasCompression=true;
+		}		
+	}
+	if(!hasCompression) {
+		*size = 0;
+		*data = NULL;		
+	}
+}
+#endif
 
 long Track::GetFirst(const BlockEntry*& pBlockEntry) const {
   const Cluster* pCluster = m_pSegment->GetFirst();
@@ -5523,6 +5844,100 @@ long VideoTrack::Seek(long long time_ns, const BlockEntry*& pResult) const {
   return 0;
 }
 
+#ifdef MTK_SUBTITLE_SUPPORT
+SubTtTrack::SubTtTrack(
+    Segment* pSegment,
+    long long element_start,
+    long long element_size) :
+    Track(pSegment, element_start, element_size)
+{
+}
+long SubTtTrack::Parse(
+    Segment* pSegment,
+    const Info& i,
+    long long elem_st,
+    long long elem_sz,
+    SubTtTrack*& pTrack)
+{
+    if (pTrack)
+        return -1;
+    if (i.type != Track::kSubtitle)
+        return -1;
+    IMkvReader* const pReader = pSegment->m_pReader;
+    pTrack = new (std::nothrow) SubTtTrack(pSegment, elem_st, elem_sz);
+    if (pTrack == NULL)
+        return -1;  //generic error
+    const int status = i.Copy(pTrack->m_info);
+    if (status)
+        return status;
+    return 0;  //success
+}
+bool SubTtTrack::VetEntry(const BlockEntry* pBlockEntry) const
+{
+    assert(pBlockEntry);
+    const Block* const pBlock = pBlockEntry->GetBlock();
+    assert(pBlock);
+    assert(pBlock->GetTrackNumber() == m_info.number);
+    return true;
+}
+long SubTtTrack::Seek(
+    long long time_ns,
+    const BlockEntry*& pResult) const
+{
+    const long status = GetFirst(pResult);
+    if (status < 0)  //buffer underflow, etc
+        return status;
+    assert(pResult);
+    if (pResult->EOS())
+        return 0;
+    const Cluster* pCluster = pResult->GetCluster();
+    assert(pCluster);
+    assert(pCluster->GetIndex() >= 0);
+    if (time_ns <= pResult->GetBlock()->GetTime(pCluster))
+        return 0;
+    Cluster** const clusters = m_pSegment->m_clusters;
+    assert(clusters);
+    const long count = m_pSegment->GetCount();  //loaded only, not preloaded
+    assert(count > 0);
+    Cluster** const i = clusters + pCluster->GetIndex();
+    assert(i);
+    assert(*i == pCluster);
+    assert(pCluster->GetTime() <= time_ns);
+    Cluster** const j = clusters + count;
+    Cluster** lo = i;
+    Cluster** hi = j;
+    while (lo < hi)
+    {
+        Cluster** const mid = lo + (hi - lo) / 2;
+        assert(mid < hi);
+        pCluster = *mid;
+        assert(pCluster);
+        assert(pCluster->GetIndex() >= 0);
+        assert(pCluster->GetIndex() == long(mid - m_pSegment->m_clusters));
+        const long long t = pCluster->GetTime();
+        if (t <= time_ns)
+            lo = mid + 1;
+        else
+            hi = mid;
+        assert(lo <= hi);
+    }
+    assert(lo == hi);
+    assert(lo > i);
+    assert(lo <= j);
+    while (lo > i)
+    {
+        pCluster = *--lo;
+        assert(pCluster);
+        assert(pCluster->GetTime() <= time_ns);
+        pResult = pCluster->GetEntry(this);
+        if ((pResult != 0) && !pResult->EOS())
+            return 0;
+    }
+    pResult = GetEOS();  //weird
+    return 0;
+}
+#endif
+
 long long VideoTrack::GetWidth() const { return m_width; }
 
 long long VideoTrack::GetHeight() const { return m_height; }
@@ -5644,7 +6059,14 @@ long Tracks::Parse() {
     const long status = ParseElementHeader(pReader, pos, stop, id, size);
 
     if (status < 0)  // error
-      return status;
+ #ifdef MTK_AOSP_ENHANCEMENT   
+		{
+			ALOGE("Tracks::Parse, ParseElementHeader 1, return error status=%d!",status);
+			return status;
+		}
+#else
+            return status;
+#endif
 
     if (size == 0)  // weird
       continue;
@@ -5679,7 +6101,14 @@ long Tracks::Parse() {
         ParseElementHeader(pReader, pos, stop, id, payload_size);
 
     if (status < 0)  // error
-      return status;
+#ifdef MTK_AOSP_ENHANCEMENT 
+		{
+			ALOGE("Tracks::Parse, ParseElementHeader 2, return error status=%d!",status);
+			return status;
+		}
+#else
+            return status;
+#endif
 
     if (payload_size == 0)  // weird
       continue;
@@ -5697,7 +6126,14 @@ long Tracks::Parse() {
                                           element_size, pTrack);
 
       if (status)
-        return status;
+#ifdef MTK_AOSP_ENHANCEMENT 
+			{
+				ALOGE("Tracks::Parse, ParseTrackEntry, return error status=%d!",status);
+				return status;
+			}
+#else
+                return status;
+#endif
 
       if (pTrack)
         ++m_trackEntriesEnd;
@@ -5745,6 +6181,11 @@ long Tracks::ParseTrackEntry(long long track_start, long long track_size,
   a.start = -1;
   a.size = -1;
 
+#ifdef MTK_SUBTITLE_SUPPORT //reserve
+    Track::Settings subTT;
+    subTT.start = -1;
+    subTT.size = -1;
+#endif
   Track::Settings e;  // content_encodings_settings;
   e.start = -1;
   e.size = -1;
@@ -5760,7 +6201,14 @@ long Tracks::ParseTrackEntry(long long track_start, long long track_size,
       return status;
 
     if (size < 0)
-      return E_FILE_FORMAT_INVALID;
+#ifdef  MTK_AOSP_ENHANCEMENT
+			{
+				ALOGE("Tracks::ParseTrackEntry, VideoSetting (id == 0x60 ) size < 0 !");
+				return E_FILE_FORMAT_INVALID;
+			}
+#else
+                return E_FILE_FORMAT_INVALID;
+#endif
 
     const long long start = pos;
 
@@ -5768,14 +6216,35 @@ long Tracks::ParseTrackEntry(long long track_start, long long track_size,
       v.start = start;
       v.size = size;
     } else if (id == 0x61) {  // AudioSettings ID
+#ifdef MTK_AOSP_ENHANCEMENT
+			if (size < 0){
+				ALOGE("Tracks::ParseTrackEntry, AudioSettings (id == 0x61) size < 0 !");
+				return E_FILE_FORMAT_INVALID;
+			}
+#endif
       a.start = start;
       a.size = size;
     } else if (id == 0x2D80) {  // ContentEncodings ID
+
+#ifdef MTK_AOSP_ENHANCEMENT
+		if (size < 0) {
+				ALOGE("Tracks::ParseTrackEntry, ContentEncodings (id == 0x2D80) size < 0!");
+				return E_FILE_FORMAT_INVALID;
+			}
+#endif
       e.start = start;
       e.size = size;
     } else if (id == 0x33C5) {  // Track UID
       if (size > 8)
-        return E_FILE_FORMAT_INVALID;
+#ifdef MTK_AOSP_ENHANCEMENT
+			{
+				ALOGE("Tracks::ParseTrackEntry, Track UID (id == 0x33C5) size =%lld > 8, return error!",size);
+				return E_FILE_FORMAT_INVALID;
+			}
+#else
+            return E_FILE_FORMAT_INVALID;
+#endif
+
 
       info.uid = 0;
 
@@ -5799,14 +6268,29 @@ long Tracks::ParseTrackEntry(long long track_start, long long track_size,
       const long long num = UnserializeUInt(pReader, pos, size);
 
       if ((num <= 0) || (num > 127))
-        return E_FILE_FORMAT_INVALID;
+#ifdef MTK_AOSP_ENHANCEMENT
+			{
+				ALOGE("Tracks::ParseTrackEntry, Track Number(id == 0x57) num=%lld not in range (0-127), return error!",num);
+				return E_FILE_FORMAT_INVALID;
+			}
+#else
+            return E_FILE_FORMAT_INVALID;
+#endif
 
       info.number = static_cast<long>(num);
     } else if (id == 0x03) {  // Track Type
       const long long type = UnserializeUInt(pReader, pos, size);
 
       if ((type <= 0) || (type > 254))
-        return E_FILE_FORMAT_INVALID;
+ #ifdef MTK_AOSP_ENHANCEMENT
+			{
+				ALOGE("Tracks::ParseTrackEntry, Track Type(id == 0x03)  type =%lld not in range(0-254), return error!",type);
+				return E_FILE_FORMAT_INVALID;
+			}
+#else
+            return E_FILE_FORMAT_INVALID;
+#endif
+
 
       info.type = static_cast<long>(type);
     } else if (id == 0x136E) {  // Track Name
@@ -5836,12 +6320,26 @@ long Tracks::ParseTrackEntry(long long track_start, long long track_size,
       lacing = UnserializeUInt(pReader, pos, size);
 
       if ((lacing < 0) || (lacing > 1))
-        return E_FILE_FORMAT_INVALID;
+ #ifdef MTK_AOSP_ENHANCEMENT
+			{
+				ALOGE("Tracks::ParseTrackEntry, lacing (id == 0x03) type=%lld not in range(0-1), return error!",lacing);
+				return E_FILE_FORMAT_INVALID;
+			}
+#else
+            return E_FILE_FORMAT_INVALID;
+#endif
+
     } else if (id == 0x23A2) {  // Codec Private
       delete[] info.codecPrivate;
       info.codecPrivate = NULL;
       info.codecPrivateSize = 0;
 
+#ifdef MTK_AOSP_ENHANCEMENT
+		 if (size <= 0)	{
+				ALOGE("Tracks::ParseTrackEntry, Codec Private (id == 0x23A2) size =%lld <= 0, return error!",size);
+				return E_FILE_FORMAT_INVALID;
+			}
+#endif
       const size_t buflen = static_cast<size_t>(size);
 
       if (buflen) {
@@ -5873,7 +6371,21 @@ long Tracks::ParseTrackEntry(long long track_start, long long track_size,
     } else if (id == 0x16BB) {  // Seek Pre Roll
       info.seekPreRoll = UnserializeUInt(pReader, pos, size);
     }
-
+#ifdef MTK_AOSP_ENHANCEMENT
+//Need Refine: need delete to use android language
+#if defined(MTK_AUDIO_CHANGE_SUPPORT) || defined(MTK_SUBTITLE_SUPPORT)
+		else if (id == 0x02b59c)  //Language
+		{
+			const long status = UnserializeString(
+									pReader,
+									pos,
+									size,
+									info.languageAsUTF8);
+			if (status)
+				return status;
+		}
+#endif
+#endif
     pos += size;  // consume payload
     assert(pos <= track_stop);
   }
@@ -5881,13 +6393,35 @@ long Tracks::ParseTrackEntry(long long track_start, long long track_size,
   assert(pos == track_stop);
 
   if (info.number <= 0)  // not specified
-    return E_FILE_FORMAT_INVALID;
+#ifdef MTK_AOSP_ENHANCEMENT
+	{
+		ALOGE("Tracks::ParseTrackEntry, i.number <= 0");
+		return E_FILE_FORMAT_INVALID;
+	}
+#else
+        return E_FILE_FORMAT_INVALID;
+#endif
 
   if (GetTrackByNumber(info.number))
-    return E_FILE_FORMAT_INVALID;
+#ifdef MTK_AOSP_ENHANCEMENT
+	{
+		ALOGE("Tracks::ParseTrackEntry,  there is already a Track with Number(%ld) , return error!",info.number);
+		return E_FILE_FORMAT_INVALID;
+	}
+#else
+        return E_FILE_FORMAT_INVALID;
+#endif
 
   if (info.type <= 0)  // not specified
-    return E_FILE_FORMAT_INVALID;
+ #ifdef MTK_AOSP_ENHANCEMENT
+	{
+		ALOGE("Tracks::ParseTrackEntry,  i.type <= 0 , return error!");
+		return E_FILE_FORMAT_INVALID;
+	}
+#else
+        return E_FILE_FORMAT_INVALID;
+#endif
+
 
   info.lacing = (lacing > 0) ? true : false;
 
@@ -5904,7 +6438,12 @@ long Tracks::ParseTrackEntry(long long track_start, long long track_size,
 
     const long status = VideoTrack::Parse(m_pSegment, info, element_start,
                                           element_size, pTrack);
-
+#ifdef MTK_AOSP_ENHANCEMENT
+        if(m_pSegment->m_videotracknumber==0){
+			m_pSegment->m_videotracknumber=info.number;
+			ALOGD("find video track ,track number=%d",m_pSegment->m_videotracknumber);
+        }		
+#endif
     if (status)
       return status;
 
@@ -5928,14 +6467,35 @@ long Tracks::ParseTrackEntry(long long track_start, long long track_size,
                                           element_size, pTrack);
 
     if (status)
-      return status;
+#ifdef MTK_AOSP_ENHANCEMENT
+	{
+		ALOGE("Tracks::Parse,  Parse track , return error status=%ld!",status);
+		return status;
+	}
+#else
+        return status;
+#endif
+
 
     pResult = pTrack;
     assert(pResult);
 
     if (e.start >= 0)
       pResult->ParseContentEncodingsEntry(e.start, e.size);
-  } else {
+    } 
+#ifdef MTK_SUBTITLE_SUPPORT
+      else if (info.type == Track::kSubtitle)
+      {
+          assert(info.type == Track::kSubtitle);
+          
+          SubTtTrack* p = NULL;
+          
+          const long status = SubTtTrack::Parse(m_pSegment, info, element_start, element_size, p);
+          pResult = p;
+          ALOGE("Tracks::subTitle,  no need parser detail !");
+      }
+#endif
+  else {
     // neither video nor audio - probably metadata or subtitles
 
     if (a.start >= 0)
@@ -6792,6 +7352,12 @@ long Cluster::ParseBlockGroup(long long payload_size, long long& pos,
 
     ++pos;  // consume flags byte
     assert(pos <= avail);
+#ifdef MTK_AOSP_ENHANCEMENT
+		if(pos==block_stop){
+			ALOGD("pos==block_stop");
+			continue;
+		}
+#endif
 
     if (pos >= block_stop)
       return E_FILE_FORMAT_INVALID;
@@ -7490,6 +8056,31 @@ long Cluster::GetLast(const BlockEntry*& pLast) const {
   return 0;
 }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+//added by vend_am00033 start for seeking backward
+const BlockEntry* Cluster::GetPrev(const BlockEntry* pEntry) const
+{
+    assert(pEntry);
+    assert(m_entries);
+    assert(m_entriesCount);
+
+    size_t idx = pEntry->GetIndex();
+    assert(idx < m_entriesCount);
+	assert(idx >= 0);
+    assert(m_entries[idx] == pEntry);
+
+	if (idx == 0)
+	{
+		return NULL;
+	}
+
+    --idx;
+    return m_entries[idx];	
+}
+//added by vend_am00033 end
+#endif
+
+
 long Cluster::GetNext(const BlockEntry* pCurr, const BlockEntry*& pNext) const {
   assert(pCurr);
   assert(m_entries);
@@ -7938,6 +8529,12 @@ long long BlockGroup::GetPrevTimeCode() const { return m_prev; }
 long long BlockGroup::GetNextTimeCode() const { return m_next; }
 
 long long BlockGroup::GetDurationTimeCode() const { return m_duration; }
+long long BlockGroup::GetDuration() const
+{
+    if (m_duration < 0)
+        return -1;
+    return m_duration;
+}
 
 Block::Block(long long start, long long size_, long long discard_padding)
     : m_start(start),
@@ -8025,7 +8622,10 @@ long Block::Parse(const Cluster* pCluster) {
     f.pos = pos;
 
     const long long frame_size = stop - pos;
-
+#ifdef MTK_AOSP_ENHANCEMENT
+		m_datasize=frame_size;
+ 		ALOGV("stop = %lld, pos=%lld, frame_size=%lld",stop,pos,frame_size);	
+#endif
     if (frame_size > LONG_MAX)
       return E_FILE_FORMAT_INVALID;
 
@@ -8104,6 +8704,9 @@ long Block::Parse(const Cluster* pCluster) {
       f.pos = 0;  // patch later
 
       const long long total_size = stop - pos;
+#ifdef MTK_AOSP_ENHANCEMENT
+			m_datasize =  total_size;
+#endif
 
       if (total_size < size)
         return E_FILE_FORMAT_INVALID;
@@ -8128,7 +8731,9 @@ long Block::Parse(const Cluster* pCluster) {
     assert(pos == stop);
   } else if (lacing == 2) {  // fixed-size lacing
     const long long total_size = stop - pos;
-
+#ifdef MTK_AOSP_ENHANCEMENT
+		m_datasize = total_size;
+#endif
     if ((total_size % m_frame_count) != 0)
       return E_FILE_FORMAT_INVALID;
 
@@ -8254,6 +8859,9 @@ long Block::Parse(const Cluster* pCluster) {
       curr.pos = 0;  // patch later
 
       const long long total_size = stop - pos;
+#ifdef MTK_AOSP_ENHANCEMENT
+			m_datasize = total_size;
+#endif
 
       if (total_size < size)
         return E_FILE_FORMAT_INVALID;
@@ -8309,6 +8917,14 @@ long long Block::GetTime(const Cluster* pCluster) const {
 
   return ns;
 }
+
+#ifdef MTK_AOSP_ENHANCEMENT    
+long long Block::GetDataSize() const //data number in block
+{
+	return m_datasize;
+}
+#endif
+
 
 long long Block::GetTrackNumber() const { return m_track; }
 

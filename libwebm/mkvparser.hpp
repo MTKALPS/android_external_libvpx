@@ -11,10 +11,16 @@
 
 #include <cstdlib>
 #include <cstdio>
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <utils/Vector.h>
+#endif
 #include <cstddef>
 
 namespace mkvparser {
 
+#ifdef MTK_AOSP_ENHANCEMENT
+using android::Vector;
+#endif
 const int E_FILE_FORMAT_INVALID = -2;
 const int E_BUFFER_NOT_FULL = -3;
 
@@ -81,6 +87,10 @@ class Block {
   long long GetTrackNumber() const;
   long long GetTimeCode(const Cluster*) const;  // absolute, but not scaled
   long long GetTime(const Cluster*) const;  // absolute, and scaled (ns)
+#ifdef MTK_AOSP_ENHANCEMENT    
+    long long GetDataSize() const;  //data number in block
+#endif
+
   bool IsKey() const;
   void SetKey(bool);
   bool IsInvisible() const;
@@ -108,6 +118,9 @@ class Block {
 
   Frame* m_frames;
   int m_frame_count;
+#ifdef MTK_AOSP_ENHANCEMENT
+	long long m_datasize;
+#endif
 
  protected:
   const long long m_discard_padding;
@@ -170,7 +183,8 @@ class BlockGroup : public BlockEntry {
   long long GetPrevTimeCode() const;  // relative to block's time
   long long GetNextTimeCode() const;  // as above
   long long GetDurationTimeCode() const;
-
+    long long GetDuration() const;
+    
  private:
   Block m_block;
   const long long m_prev;
@@ -197,6 +211,10 @@ class ContentEncoding {
     unsigned long long algo;
     unsigned char* settings;
     long long settings_len;
+#ifdef MTK_AOSP_ENHANCEMENT
+        size_t settingSize;
+#endif
+
   };
 
   // ContentEncAESSettings element names
@@ -317,12 +335,22 @@ class Track {
   const char* GetCodecNameAsUTF8() const;
   const char* GetCodecId() const;
   const unsigned char* GetCodecPrivate(size_t&) const;
+#ifdef MTK_AOSP_ENHANCEMENT
+#if defined(MTK_AUDIO_CHANGE_SUPPORT) || defined(MTK_SUBTITLE_SUPPORT)
+	const char* GetLanguageAsUTF8() const;
+#endif
+	//long long GetDefaultDuration() const; //delete mtk getdefulatduraition function
+#endif
+
   bool GetLacing() const;
   unsigned long long GetDefaultDuration() const;
   unsigned long long GetCodecDelay() const;
   unsigned long long GetSeekPreRoll() const;
 
   const BlockEntry* GetEOS() const;
+#ifdef MTK_AOSP_ENHANCEMENT
+	void GetContentAddInfo(unsigned char** data, size_t* size) const;
+#endif
 
   struct Settings {
     long long start;
@@ -349,7 +377,12 @@ class Track {
     size_t codecPrivateSize;
     bool lacing;
     Settings settings;
-
+#ifdef MTK_AOSP_ENHANCEMENT
+#if defined(MTK_AUDIO_CHANGE_SUPPORT) || defined(MTK_SUBTITLE_SUPPORT)
+        char* languageAsUTF8; //Need Refine, chanage to use android added language
+#endif
+		//long long defaultDuration; //delete mtk added defaultDuration
+#endif
    private:
     Info(const Info&);
     Info& operator=(const Info&);
@@ -429,6 +462,26 @@ class AudioTrack : public Track {
   long long m_bitDepth;
 };
 
+#ifdef MTK_SUBTITLE_SUPPORT
+class SubTtTrack : public Track
+{
+    SubTtTrack(const SubTtTrack&);
+    SubTtTrack& operator=(const SubTtTrack&);
+    SubTtTrack(
+        Segment*,
+        long long element_start,
+        long long element_size);
+public:
+    static long Parse(
+        Segment*,
+        const Info&,
+        long long element_start,
+        long long element_size,
+        SubTtTrack*&);
+    bool VetEntry(const BlockEntry*) const;
+    long Seek(long long time_ns, const BlockEntry*&) const;
+};
+#endif
 class Tracks {
   Tracks(const Tracks&);
   Tracks& operator=(const Tracks&);
@@ -701,7 +754,9 @@ class CuePoint {
   };
 
   const TrackPosition* Find(const Track*) const;
-
+#ifdef MTK_AOSP_ENHANCEMENT	
+	bool IsHasVideoCuePositon(long );
+#endif
  private:
   const long m_index;
   long long m_timecode;
@@ -753,7 +808,11 @@ class Cues {
  private:
   void Init() const;
   void PreloadCuePoint(long&, long long) const;
-
+#ifdef MTK_AOSP_ENHANCEMENT
+	mutable CuePoint** m_cue_temp_points;
+	mutable long m_temp_count;
+	mutable long m_preload_temp_count;
+#endif
   mutable CuePoint** m_cue_points;
   mutable long m_count;
   mutable long m_preload_count;
@@ -788,7 +847,9 @@ class Cluster {
   long GetFirst(const BlockEntry*&) const;
   long GetLast(const BlockEntry*&) const;
   long GetNext(const BlockEntry* curr, const BlockEntry*& next) const;
-
+#ifdef MTK_AOSP_ENHANCEMENT
+	const BlockEntry* GetPrev(const BlockEntry*) const;
+#endif
   const BlockEntry* GetEntry(const Track*, long long ns = -1) const;
   const BlockEntry* GetEntry(const CuePoint&,
                              const CuePoint::TrackPosition&) const;
@@ -844,6 +905,9 @@ class Segment {
   friend class Cues;
   friend class Track;
   friend class VideoTrack;
+#ifdef MTK_SUBTITLE_SUPPORT
+    friend class SubTtTrack;
+#endif
 
   Segment(const Segment&);
   Segment& operator=(const Segment&);
@@ -860,6 +924,9 @@ class Segment {
   const long long m_start;  // posn of segment payload
   const long long m_size;  // size of segment payload
   Cluster m_eos;  // TODO: make private?
+#ifdef MTK_AOSP_ENHANCEMENT
+	long m_videotracknumber;
+#endif
 
   static long long CreateInstance(IMkvReader*, long long, Segment*&);
   ~Segment();
@@ -896,7 +963,9 @@ class Segment {
   const Cluster* GetFirst() const;
   const Cluster* GetLast() const;
   const Cluster* GetNext(const Cluster*);
-
+#ifdef MTK_AOSP_ENHANCEMENT
+	Cluster* GetPrev(const Cluster* pCurr);
+#endif
   const Cluster* FindCluster(long long time_nanoseconds) const;
   // const BlockEntry* Seek(long long time_nanoseconds, const Track*) const;
 
